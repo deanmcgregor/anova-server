@@ -128,14 +128,16 @@ def index():
 def handle_request():
     try:
         req = request.get_json()
+        if type(req) is not dict:
+            req = json.loads(req)
         if 'is_running' in req:
-            if req['is_running']:
+            if req["is_running"]:
                 app.anova_controller.start_anova()
             else:
                 app.anova_controller.stop_anova()
         elif 'target_temp' in req:
-            temp = req['target_temp']
-            app.anova_controller.set_temp(temp)
+            temp = req["target_temp"]
+            app.anova_controller.set_temp(int(temp))
 
     except Exception as exc:
         app.logger.error(exc)
