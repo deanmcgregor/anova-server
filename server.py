@@ -107,17 +107,38 @@ def make_error(status_code, message, sub_code=None, action=None, **kwargs):
 
 # REST endpoints
 
+def try_connect(connection=None):
+    if connection is None:
+        try:
+            result = RESTAnovaController(ANOVA_MAC_ADDRESS, logger=app.logger)
+        except Exception:
+            result = None
+    else:
+        try:
+            status = connection.anova_status()
+            result = connection
+        except Exception:
+            result = None
+
+    return result
+
+def get_status_from_maybe_cooker(connection):
+    if connection is None:
+        return { 'status' : 'none' }
+    else:
+        return { 'status' : {
+                       'temp_unit' : app.anova_controller.read_unit(),
+                       'current_temp' : app.anova_controller.read_temp(),
+                       'target_temp' : float(app.anova_controller.read_set_temp()),
+                       'is_running' : app.anova_controller.anova_status() == 'running'
+                   }
+               }
+
 @app.route('/', methods=["GET"])
 def index():
+    app.anova_controller = try_connect(app.anova_controller)
     try:
-        output = {
-            'status' : {
-                'temp_unit' : app.anova_controller.read_unit(),
-                'current_temp' : app.anova_controller.read_temp(),
-                'target_temp' : float(app.anova_controller.read_set_temp()),
-                'is_running' : app.anova_controller.anova_status() == 'running'
-            }
-        }
+        output = get_status_from_maybe_cooker(app.anova_controller)
     except Exception as exc:
         app.logger.error(exc)
         return make_error(500, "{0}: {1}".format(repr(exc), str(exc)))
@@ -126,24 +147,27 @@ def index():
 
 @app.route('/', methods=["POST"])
 def handle_request():
+    app.anova_controller = try_connect(app.anova_controller)
     try:
-        req = request.get_json()
-        if type(req) is not dict:
-            req = json.loads(req)
-        if 'is_running' in req:
-            if req["is_running"]:
-                app.anova_controller.start_anova()
-            else:
-                app.anova_controller.stop_anova()
-        elif 'target_temp' in req:
-            temp = req["target_temp"]
-            app.anova_controller.set_temp(int(temp))
+        if app.anova_controller is not None:
+            req = request.get_json()
+            if type(req) is not dict:
+                req = json.loads(req)
+            if 'is_running' in req:
+                if req["is_running"]:
+                    app.anova_controller.start_anova()
+                else:
+                    app.anova_controller.stop_anova()
+            elif 'target_temp' in req:
+                temp = req["target_temp"]
+                app.anova_controller.set_temp(int(temp))
+        output = get_status_from_maybe_cooker(app.anova_controller)
 
     except Exception as exc:
         app.logger.error(exc)
         return make_error(500, "{0}: {1}".format(repr(exc), str(exc)))
 
-    return index() 
+    return output
 
 class AuthMiddleware(object):
     """
@@ -186,7 +210,7 @@ def main():
     handler.setFormatter(formatter)
     app.logger.addHandler(handler)
 
-    app.anova_controller = RESTAnovaController(ANOVA_MAC_ADDRESS, logger=app.logger)
+    app.anova_controller = try_connect()
 
     app.run(host='0.0.0.0', port=5000)
 
