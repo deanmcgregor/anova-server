@@ -124,20 +124,21 @@ def try_connect(connection=None):
 
 def get_status_from_maybe_cooker(connection):
     if connection is None:
-        return { 'status' : 'none' }
+        output = { 'status' : 'none' }
     else:
-        return { 'status' : {
-                       'temp_unit' : app.anova_controller.read_unit(),
-                       'current_temp' : app.anova_controller.read_temp(),
-                       'target_temp' : float(app.anova_controller.read_set_temp()),
-                       'is_running' : app.anova_controller.anova_status() == 'running'
+        output = { 'status' : {
+                       'temp_unit' : connection.read_unit(),
+                       'current_temp' : connection.read_temp(),
+                       'target_temp' : float(connection.read_set_temp()),
+                       'is_running' : connection.anova_status() == 'running'
                    }
                }
+    return output
 
 @app.route('/', methods=["GET"])
 def index():
-    app.anova_controller = try_connect(app.anova_controller)
     try:
+        app.anova_controller = try_connect(app.anova_controller)
         output = get_status_from_maybe_cooker(app.anova_controller)
     except Exception as exc:
         app.logger.error(exc)
@@ -147,12 +148,13 @@ def index():
 
 @app.route('/', methods=["POST"])
 def handle_request():
-    app.anova_controller = try_connect(app.anova_controller)
     try:
+        app.anova_controller = try_connect(app.anova_controller)
         if app.anova_controller is not None:
             req = request.get_json()
             if type(req) is not dict:
                 req = json.loads(req)
+            app.logger.info(req);
             if 'is_running' in req:
                 if req["is_running"]:
                     app.anova_controller.start_anova()
@@ -161,13 +163,15 @@ def handle_request():
             elif 'target_temp' in req:
                 temp = req["target_temp"]
                 app.anova_controller.set_temp(int(temp))
+
         output = get_status_from_maybe_cooker(app.anova_controller)
 
     except Exception as exc:
         app.logger.error(exc)
         return make_error(500, "{0}: {1}".format(repr(exc), str(exc)))
 
-    return output
+    return jsonify(output)
+
 
 class AuthMiddleware(object):
     """
